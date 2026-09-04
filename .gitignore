@@ -1,0 +1,5 @@
+# the app
+dist/
+
+# python
+*.pyc
