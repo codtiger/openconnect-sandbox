@@ -18,6 +18,7 @@ struct MenuBarContent: View {
             }
 
             Divider()
+            Button("Copy Environment Reset") { model.copyEnvironmentReset() }
             Button("Connections…") {
                 activateApplication()
                 openWindow(id: "connections")
@@ -76,6 +77,7 @@ private struct RunningProfileMenuItem: View {
                 .disabled(session.phase == .stopping)
             Button("Copy Proxy Environment") { model.copyEnvironment(for: profile) }
                 .disabled(session.phase != .connected)
+            Button("Copy Environment Reset") { model.copyEnvironmentReset() }
             Button("Open Shell") { model.openShell(for: profile) }
                 .disabled(session.phase != .connected)
         } label: {

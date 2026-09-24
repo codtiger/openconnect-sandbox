@@ -13,6 +13,7 @@ final class AppModel: ObservableObject {
     @Published var errorMessage: String?
     @Published var transientPasswords: [UUID: String] = [:]
     @Published var transientCodes: [UUID: String] = [:]
+    @Published var transientSSOUsernames: [UUID: String] = [:]
     @Published private(set) var sessions: [UUID: SupervisorClient] = [:]
     @Published private(set) var isShuttingDown = false
 
@@ -51,8 +52,11 @@ final class AppModel: ObservableObject {
         }
         profiles.removeAll { $0.id == id }
         try? keychain.removePassword(for: id)
+        try? keychain.removeSSOCredentials(for: id)
+        try? FileManager.default.removeItem(at: SandboxPaths.ssoSessionDirectory(profileID: id))
         transientPasswords[id] = nil
         transientCodes[id] = nil
+        transientSSOUsernames[id] = nil
         if selectedProfileID == id { selectedProfileID = profiles.first?.id }
         persist()
     }
@@ -115,6 +119,54 @@ final class AppModel: ObservableObject {
         catch { errorMessage = "Could not remove the password: \(error.localizedDescription)" }
     }
 
+    func hasSavedSSOCredentials(_ id: UUID) -> Bool {
+        (try? keychain.ssoCredentials(for: id)) != nil
+    }
+
+    func saveSSOCredentials(for id: UUID) {
+        guard let username = nonempty(transientSSOUsernames[id]),
+              let password = nonempty(transientPasswords[id]) else {
+            errorMessage = "Enter both the SSO username and password before saving them."
+            return
+        }
+        do {
+            try keychain.setSSOCredentials(username: username, password: password, for: id)
+            transientPasswords[id] = ""
+        } catch {
+            errorMessage = "Could not save the SSO credentials: \(error.localizedDescription)"
+        }
+    }
+
+    func forgetSSOCredentials(for id: UUID) {
+        do {
+            try keychain.removeSSOCredentials(for: id)
+            transientSSOUsernames[id] = ""
+            transientPasswords[id] = ""
+        } catch {
+            errorMessage = "Could not remove the SSO credentials: \(error.localizedDescription)"
+        }
+    }
+
+    func hasRememberedSSOSession(_ id: UUID) -> Bool {
+        FileManager.default.fileExists(atPath: SandboxPaths.ssoSessionDirectory(profileID: id).path)
+    }
+
+    func clearRememberedSSOSession(for id: UUID) {
+        guard sessions[id] == nil else {
+            errorMessage = "Disconnect this profile before clearing its remembered SSO session."
+            return
+        }
+        do {
+            let directory = SandboxPaths.ssoSessionDirectory(profileID: id)
+            if FileManager.default.fileExists(atPath: directory.path) {
+                try FileManager.default.removeItem(at: directory)
+            }
+            objectWillChange.send()
+        } catch {
+            errorMessage = "Could not clear the remembered SSO session: \(error.localizedDescription)"
+        }
+    }
+
     func connect(_ id: UUID) {
         guard !isShuttingDown, sessions[id] == nil, let profile = profile(id: id) else { return }
         do {
@@ -125,15 +177,24 @@ final class AppModel: ObservableObject {
                     throw ProfileValidationError.portUnavailable(port)
                 }
             }
+            var connectionProfile = profile
             let password: String?
             if profile.authenticationMode == .openConnect {
                 let savedPassword = try keychain.password(for: id)
                 password = nonempty(transientPasswords[id]) ?? savedPassword
+            } else if profile.rememberSSOCredentials {
+                let saved = try keychain.ssoCredentials(for: id)
+                guard let username = nonempty(transientSSOUsernames[id]) ?? saved?.username,
+                      let ssoPassword = nonempty(transientPasswords[id]) ?? saved?.password else {
+                    throw AppModelError.missingSSOCredentials
+                }
+                connectionProfile.username = username
+                password = ssoPassword
             } else {
                 password = nil
             }
             let request = SupervisorStartRequest(
-                profile: profile,
+                profile: connectionProfile,
                 toolPaths: toolPaths,
                 groupExecPath: helperPath(named: "OpenConnectSandboxExec"),
                 ssoBootstrapPath: ssoResourcePath(named: "bootstrap.py"),
@@ -157,6 +218,7 @@ final class AppModel: ObservableObject {
             }
             sessions[id] = client
             try client.start(supervisorPath: helperPath(named: "OpenConnectSandboxSupervisor"), request: request)
+            transientPasswords[id] = ""
             transientCodes[id] = ""
             writeRuntimeState()
         } catch {
@@ -207,6 +269,11 @@ final class AppModel: ObservableObject {
         let text = proxyEnvironmentScript(for: profile)
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(text, forType: .string)
+    }
+
+    func copyEnvironmentReset() {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(CommandBuilder.shellEnvironmentReset(), forType: .string)
     }
 
     func openShell(for profile: VPNProfile) {
@@ -265,6 +332,11 @@ final class AppModel: ObservableObject {
             profiles = configuration.profiles
             toolPaths = configuration.toolPaths
             selectedProfileID = profiles.first?.id
+            for profile in profiles where profile.authenticationMode == .openConnectSSO && profile.rememberSSOCredentials {
+                if let credentials = try? keychain.ssoCredentials(for: profile.id) {
+                    transientSSOUsernames[profile.id] = credentials.username
+                }
+            }
             if toolPaths.openConnect.isEmpty || toolPaths.ocproxy.isEmpty { redetectTools() }
         } catch {
             toolPaths = ToolLocator.detect()
@@ -342,4 +414,12 @@ final class AppModel: ObservableObject {
 
     private func removeRuntimeState() { try? FileManager.default.removeItem(at: SandboxPaths.runtimeURL()) }
     private func nonempty(_ value: String?) -> String? { value.flatMap { $0.isEmpty ? nil : $0 } }
+}
+
+private enum AppModelError: LocalizedError {
+    case missingSSOCredentials
+
+    var errorDescription: String? {
+        "Enter the SSO username and password, or save them in Keychain, before connecting."
+    }
 }

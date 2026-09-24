@@ -15,7 +15,8 @@ Multiple profiles can be connected simultaneously. Each connection uses a differ
 - Optional automatic reconnection and connect-on-launch
 - Optional launch at login through `SMAppService`
 - Password storage in macOS Keychain
-- Ephemeral browser sessions for SSO authentication
+- Ephemeral SSO by default, with optional per-profile remembered browser sessions
+- Optional SSO username/password autofill from macOS Keychain
 - Graceful Disconnect, Quit, sleep, crash, and Force Quit cleanup
 - No persistent daemon or privileged helper
 
@@ -170,7 +171,7 @@ Select a different profile in another terminal:
 eval "$(vpnctl env NYIT)"
 ```
 
-Restore direct networking and the original `PATH` with:
+Restore direct networking and the original `PATH` with the app's **Copy Environment Reset** button, or with:
 
 ```bash
 eval "$(vpnctl env --direct)"
@@ -215,7 +216,14 @@ By default, each SSO attempt uses:
 - an off-the-record Qt WebEngine profile;
 - no injected username, password, or TOTP secret.
 
-This prevents identity-provider and Duo browser cookies from persisting between sessions. The tradeoff is that the identity provider may request username, password, and MFA approval on every new connection. Standard `openconnect-sso` can remember credentials and browser state, but this application intentionally defaults to the non-persistent behavior.
+This prevents identity-provider and Duo browser cookies from persisting between sessions. The tradeoff is that the identity provider may request username, password, and MFA approval on every new connection.
+
+Two independent, opt-in settings are available for SSO profiles:
+
+- **Remember SSO browser session** keeps Qt WebEngine cookies and site data in a private directory scoped to that profile's UUID. Configuration is not shared between profiles. **Clear Remembered SSO Session** removes that directory after the profile is disconnected.
+- **Autofill username and password from Keychain** stores both values as a per-profile macOS Keychain item. The password is supplied to `openconnect-sso` over a private standard-input pipe, retained only in memory by the browser process, and is not duplicated into `openconnect-sso`'s own keyring.
+
+Remembering browser state does not keep any process alive. OpenConnect, `ocproxy`, `openconnect-sso`, Qt, and supervisor processes follow the same bounded Disconnect/Quit/Force Quit cleanup whether persistence is enabled or not. Credentials are protected by Keychain; browser cookies and site data are isolated by a private profile directory but are governed by Qt WebEngine's storage implementation.
 
 Do not enter a temporary six-digit MFA code into an `openconnect-sso` prompt labelled **TOTP secret**. That prompt expects a permanent base32 TOTP seed and may save it in the system keyring.
 

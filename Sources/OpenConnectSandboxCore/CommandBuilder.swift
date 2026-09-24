@@ -74,6 +74,9 @@ public enum CommandBuilder {
     public static func ssoArguments(profile: VPNProfile) -> [String] {
         var values = ["--authenticate", "json", "--server", profile.server]
         if !profile.authGroup.isEmpty { values += ["--authgroup", profile.authGroup] }
+        if profile.rememberSSOCredentials, !profile.username.isEmpty {
+            values += ["--user", profile.username]
+        }
         return values
     }
 
@@ -103,6 +106,13 @@ public enum CommandBuilder {
             "VPNCTL_PROFILE_ID": profile.id.uuidString,
             "VPNCTL_PROXY_URL": proxy,
         ]
+    }
+
+    public static func shellEnvironmentReset() -> String {
+        """
+        if [ -n "${OPENCONNECT_SANDBOX_ORIGINAL_PATH-}" ]; then export PATH="$OPENCONNECT_SANDBOX_ORIGINAL_PATH"; fi
+        unset OPENCONNECT_SANDBOX_ORIGINAL_PATH ALL_PROXY all_proxy HTTP_PROXY HTTPS_PROXY FTP_PROXY http_proxy https_proxy ftp_proxy NO_PROXY no_proxy VPNCTL_PROFILE_ID VPNCTL_PROXY_URL
+        """
     }
 
     public static func shellQuote(_ value: String) -> String {

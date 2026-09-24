@@ -27,13 +27,17 @@ struct ProfilesWindow: View {
                 .padding(8)
             }
             .navigationTitle("Connections")
+            .navigationSplitViewColumnWidth(min: 180, ideal: 230, max: 320)
         } detail: {
-            if let id = model.selectedProfileID, model.profile(id: id) != nil {
-                ProfileDetail(profileID: id)
-                    .environmentObject(model)
-            } else {
-                ContentUnavailableView("No Connection Selected", systemImage: "lock.shield", description: Text("Add or select a VPN connection."))
+            Group {
+                if let id = model.selectedProfileID, model.profile(id: id) != nil {
+                    ProfileDetail(profileID: id)
+                        .environmentObject(model)
+                } else {
+                    ContentUnavailableView("No Connection Selected", systemImage: "lock.shield", description: Text("Add or select a VPN connection."))
+                }
             }
+            .navigationSplitViewColumnWidth(min: 360, ideal: 680)
         }
         .alert("OpenConnect Sandbox", isPresented: Binding(
             get: { model.errorMessage != nil },

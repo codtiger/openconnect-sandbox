@@ -235,7 +235,7 @@ private final class ConnectionSupervisor {
               let patchDirectory = request.ssoPatchDirectory,
               FileManager.default.isReadableFile(atPath: bootstrapPath),
               FileManager.default.fileExists(atPath: patchDirectory) else {
-            fail("The ephemeral SSO browser bootstrap is missing.")
+            fail("The managed SSO browser bootstrap is missing.")
         }
         let pythonCommand: (executable: String, arguments: [String])
         do {
@@ -251,15 +251,31 @@ private final class ConnectionSupervisor {
         } catch {
             fail("Could not create isolated SSO browser storage: \(error.localizedDescription)")
         }
+        let browserDirectory: URL
+        if request.profile.rememberSSOSession {
+            browserDirectory = SandboxPaths.ssoSessionDirectory(profileID: request.profile.id)
+            do {
+                try FileManager.default.createDirectory(
+                    at: browserDirectory,
+                    withIntermediateDirectories: true,
+                    attributes: [.posixPermissions: 0o700]
+                )
+            } catch {
+                fail("Could not create the remembered SSO session directory: \(error.localizedDescription)")
+            }
+        } else {
+            browserDirectory = temporaryDirectory
+        }
         let process = GroupProcess(
             groupExecPath: request.groupExecPath,
             executable: pythonCommand.executable,
             arguments: pythonCommand.arguments + CommandBuilder.ssoArguments(profile: request.profile),
             environment: [
                 "XDG_CONFIG_HOME": temporaryDirectory.appendingPathComponent("config").path,
-                "XDG_CACHE_HOME": temporaryDirectory.appendingPathComponent("cache").path,
-                "XDG_DATA_HOME": temporaryDirectory.appendingPathComponent("data").path,
-                "OPENCONNECT_SANDBOX_EPHEMERAL_SSO": "1",
+                "XDG_CACHE_HOME": browserDirectory.appendingPathComponent("cache").path,
+                "XDG_DATA_HOME": browserDirectory.appendingPathComponent("data").path,
+                "OPENCONNECT_SANDBOX_EPHEMERAL_SSO": request.profile.rememberSSOSession ? "0" : "1",
+                "OPENCONNECT_SANDBOX_MANAGED_CREDENTIALS": request.profile.rememberSSOCredentials ? "1" : "0",
                 "PYTHONPATH": patchDirectory + Self.environmentSuffix(name: "PYTHONPATH", separator: ":"),
                 "PATH": URL(fileURLWithPath: request.toolPaths.openConnectSSO).deletingLastPathComponent().path
                     + Self.environmentSuffix(name: "PATH", separator: ":"),
@@ -293,7 +309,14 @@ private final class ConnectionSupervisor {
         }
         do {
             try process.run()
-            process.closeInput()
+            if request.profile.rememberSSOCredentials, let password = request.password, !password.isEmpty {
+                // openconnect-sso asks for a password and then a TOTP seed.
+                // The managed credential shim keeps the password in memory and
+                // consumes a blank TOTP line so Duo Push remains browser-driven.
+                process.writeSecretLines([password, ""])
+            } else {
+                process.closeInput()
+            }
         } catch {
             fail("Could not start openconnect-sso: \(error.localizedDescription)")
         }

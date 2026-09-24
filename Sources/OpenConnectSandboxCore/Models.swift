@@ -39,6 +39,8 @@ public struct VPNProfile: Codable, Hashable, Identifiable, Sendable {
     public var additionalArguments: [String]
     public var autoReconnect: Bool
     public var connectOnLaunch: Bool
+    public var rememberSSOSession: Bool
+    public var rememberSSOCredentials: Bool
 
     public init(
         id: UUID = UUID(),
@@ -52,7 +54,9 @@ public struct VPNProfile: Codable, Hashable, Identifiable, Sendable {
         localForwards: [LocalForward] = [],
         additionalArguments: [String] = [],
         autoReconnect: Bool = false,
-        connectOnLaunch: Bool = false
+        connectOnLaunch: Bool = false,
+        rememberSSOSession: Bool = false,
+        rememberSSOCredentials: Bool = false
     ) {
         self.id = id
         self.name = name
@@ -66,6 +70,32 @@ public struct VPNProfile: Codable, Hashable, Identifiable, Sendable {
         self.additionalArguments = additionalArguments
         self.autoReconnect = autoReconnect
         self.connectOnLaunch = connectOnLaunch
+        self.rememberSSOSession = rememberSSOSession
+        self.rememberSSOCredentials = rememberSSOCredentials
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, name, authenticationMode, server, username, authGroup, vpnProtocol
+        case socksPort, localForwards, additionalArguments, autoReconnect, connectOnLaunch
+        case rememberSSOSession, rememberSSOCredentials
+    }
+
+    public init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        id = try values.decode(UUID.self, forKey: .id)
+        name = try values.decode(String.self, forKey: .name)
+        authenticationMode = try values.decode(AuthenticationMode.self, forKey: .authenticationMode)
+        server = try values.decode(String.self, forKey: .server)
+        username = try values.decode(String.self, forKey: .username)
+        authGroup = try values.decode(String.self, forKey: .authGroup)
+        vpnProtocol = try values.decode(VPNProtocol.self, forKey: .vpnProtocol)
+        socksPort = try values.decode(Int.self, forKey: .socksPort)
+        localForwards = try values.decode([LocalForward].self, forKey: .localForwards)
+        additionalArguments = try values.decode([String].self, forKey: .additionalArguments)
+        autoReconnect = try values.decode(Bool.self, forKey: .autoReconnect)
+        connectOnLaunch = try values.decode(Bool.self, forKey: .connectOnLaunch)
+        rememberSSOSession = try values.decodeIfPresent(Bool.self, forKey: .rememberSSOSession) ?? false
+        rememberSSOCredentials = try values.decodeIfPresent(Bool.self, forKey: .rememberSSOCredentials) ?? false
     }
 }
 

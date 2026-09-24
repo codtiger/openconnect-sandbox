@@ -16,6 +16,12 @@ public enum SandboxPaths {
         applicationSupportDirectory(fileManager: fileManager).appendingPathComponent("runtime.json")
     }
 
+    public static func ssoSessionDirectory(profileID: UUID, fileManager: FileManager = .default) -> URL {
+        applicationSupportDirectory(fileManager: fileManager)
+            .appendingPathComponent("SSOSessions", isDirectory: true)
+            .appendingPathComponent(profileID.uuidString, isDirectory: true)
+    }
+
     public static func ensureDirectory(fileManager: FileManager = .default) throws {
         try fileManager.createDirectory(
             at: applicationSupportDirectory(fileManager: fileManager),

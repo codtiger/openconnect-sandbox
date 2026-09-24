@@ -20,10 +20,11 @@ struct OpenConnectSandboxApp: App {
         Window("OpenConnect Sandbox", id: "connections") {
             ProfilesWindow()
                 .environmentObject(model)
-                .frame(minWidth: 860, minHeight: 560)
+                .frame(minWidth: 640, minHeight: 500)
                 .onAppear { appDelegate.model = model }
         }
         .defaultSize(width: 980, height: 650)
+        .windowResizability(.contentMinSize)
 
         Settings {
             AppSettingsView()

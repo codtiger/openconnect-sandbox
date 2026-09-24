@@ -27,6 +27,19 @@ final class CoreTests: XCTestCase {
         XCTAssertTrue(arguments.contains("--cookie-on-stdin"))
     }
 
+    func testSSOCredentialArgumentsAreOptIn() {
+        var profile = VPNProfile(
+            name: "SSO",
+            authenticationMode: .openConnectSSO,
+            server: "vpn.example.com",
+            username: "person@example.com",
+            socksPort: 11081
+        )
+        XCTAssertFalse(CommandBuilder.ssoArguments(profile: profile).contains("--user"))
+        profile.rememberSSOCredentials = true
+        XCTAssertEqual(Array(CommandBuilder.ssoArguments(profile: profile).suffix(2)), ["--user", "person@example.com"])
+    }
+
     func testUnsafeArgumentsAreRejected() {
         for unsafe in ["--script=/tmp/evil", "--config", "-b", "-bq", "--csd-wrapper=/tmp/evil"] {
             let profile = VPNProfile(name: "Unsafe", server: "vpn.example.com", socksPort: 11080, additionalArguments: [unsafe])
@@ -77,6 +90,14 @@ final class CoreTests: XCTestCase {
         XCTAssertTrue(command.hasSuffix("exec '/opt/homebrew/bin/ocproxy' -D 12080"))
     }
 
+    func testShellEnvironmentResetRestoresPathAndClearsProfile() {
+        let reset = CommandBuilder.shellEnvironmentReset()
+        XCTAssertTrue(reset.contains("export PATH=\"$OPENCONNECT_SANDBOX_ORIGINAL_PATH\""))
+        XCTAssertTrue(reset.contains("unset OPENCONNECT_SANDBOX_ORIGINAL_PATH"))
+        XCTAssertTrue(reset.contains("ALL_PROXY"))
+        XCTAssertTrue(reset.contains("VPNCTL_PROFILE_ID"))
+    }
+
     func testConfigurationRoundTrip() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -91,5 +112,27 @@ final class CoreTests: XCTestCase {
         let actual = try store.load()
         XCTAssertEqual(actual.profiles, expected.profiles)
         XCTAssertEqual(actual.toolPaths, expected.toolPaths)
+    }
+
+    func testLegacyProfileDefaultsToEphemeralSSO() throws {
+        let profile = VPNProfile(name: "Legacy", authenticationMode: .openConnectSSO, server: "vpn.example.com", socksPort: 11080)
+        let encoded = try JSONEncoder.configured.encode(profile)
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        object.removeValue(forKey: "rememberSSOSession")
+        object.removeValue(forKey: "rememberSSOCredentials")
+        let legacy = try JSONSerialization.data(withJSONObject: object)
+        let decoded = try JSONDecoder.configured.decode(VPNProfile.self, from: legacy)
+        XCTAssertFalse(decoded.rememberSSOSession)
+        XCTAssertFalse(decoded.rememberSSOCredentials)
+    }
+
+    func testSSOSessionDirectoriesAreProfileScoped() {
+        let first = UUID()
+        let second = UUID()
+        XCTAssertNotEqual(
+            SandboxPaths.ssoSessionDirectory(profileID: first),
+            SandboxPaths.ssoSessionDirectory(profileID: second)
+        )
+        XCTAssertTrue(SandboxPaths.ssoSessionDirectory(profileID: first).path.hasSuffix(first.uuidString))
     }
 }
