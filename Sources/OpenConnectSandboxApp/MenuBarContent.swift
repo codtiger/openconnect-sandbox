@@ -48,14 +48,18 @@ private struct ProfileMenuItem: View {
     let profile: VPNProfile
 
     var body: some View {
-        if let session = model.session(for: profile.id) {
+        if let session = model.session(for: profile.id),
+           session.phase != .failed, session.phase != .stopped {
             RunningProfileMenuItem(profile: profile, session: session)
                 .environmentObject(model)
         } else {
             Button {
-                model.connect(profile.id)
+                model.toggle(profile.id)
             } label: {
-                Label("\(profile.name) — Connect", systemImage: "circle")
+                Label(
+                    "\(profile.name) — \(model.session(for: profile.id)?.phase == .failed ? "Retry" : "Connect")",
+                    systemImage: model.session(for: profile.id)?.phase == .failed ? "exclamationmark.triangle" : "circle"
+                )
             }
         }
     }

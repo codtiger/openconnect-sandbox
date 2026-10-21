@@ -45,7 +45,13 @@ final class SupervisorClient: ObservableObject, Identifiable {
             Task { @MainActor in
                 guard let self else { return }
                 self.supervisorPID = nil
-                if self.phase != .failed { self.phase = .stopped }
+                if self.requestedStop {
+                    self.phase = .stopped
+                } else if self.phase != .failed {
+                    self.phase = .failed
+                    self.appendLog("Connection supervisor exited unexpectedly with status \(task.terminationStatus).")
+                }
+                self.onStateChange?(self)
                 self.onExit?(self, task.terminationStatus, self.requestedStop)
             }
         }

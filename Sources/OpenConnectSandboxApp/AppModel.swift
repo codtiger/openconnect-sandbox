@@ -46,10 +46,11 @@ final class AppModel: ObservableObject {
     }
 
     func deleteProfile(_ id: UUID) {
-        guard sessions[id] == nil else {
+        if let session = sessions[id], session.phase != .stopped && session.phase != .failed {
             errorMessage = "Disconnect this profile before deleting it."
             return
         }
+        sessions[id] = nil
         profiles.removeAll { $0.id == id }
         try? keychain.removePassword(for: id)
         try? keychain.removeSSOCredentials(for: id)
@@ -381,10 +382,17 @@ final class AppModel: ObservableObject {
 
     private func supervisorExited(_ client: SupervisorClient, status: Int32, requestedStop: Bool) {
         let id = client.profileID
-        sessions[id] = nil
+        let unexpected = !isShuttingDown && !requestedStop
+        let shouldReconnect = unexpected && status != 0 && profile(id: id)?.autoReconnect == true
+
+        if !unexpected || shouldReconnect {
+            sessions[id] = nil
+        } else {
+            errorMessage = client.logs.last ?? "The connection ended unexpectedly. Open the connection logs for details."
+        }
         writeRuntimeState()
-        guard !isShuttingDown, !requestedStop, status != 0,
-              let profile = profile(id: id), profile.autoReconnect else { return }
+
+        guard shouldReconnect else { return }
         let attempt = min((reconnectAttempts[id] ?? 0) + 1, 6)
         reconnectAttempts[id] = attempt
         let delay = min(pow(2.0, Double(attempt)), 30.0)

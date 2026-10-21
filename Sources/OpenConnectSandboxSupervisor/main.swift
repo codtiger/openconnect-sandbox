@@ -325,6 +325,10 @@ private final class ConnectionSupervisor {
     private func launchTunnel(arguments: [String], secret: String?) {
         if isStopping { finishStopped(); return }
         emitter.send(SupervisorEvent(type: "state", phase: .connecting))
+        emitter.send(SupervisorEvent(
+            type: "log",
+            message: "Starting OpenConnect with the profile's explicit ocproxy userspace script; the system vpnc-script is not used."
+        ))
         let process = GroupProcess(
             groupExecPath: request.groupExecPath,
             executable: request.toolPaths.openConnect,
@@ -337,16 +341,20 @@ private final class ConnectionSupervisor {
             guard let self, let process else { return }
             process.terminateRemainingGroup()
             self.terminateTrackedProxy(removeTracking: true)
-            if self.isStopping || task.terminationStatus == 0 {
+            if self.isStopping {
                 self.finishStopped()
             } else {
+                let status = task.terminationStatus
+                let message = status == 0
+                    ? "OpenConnect ended unexpectedly without establishing a persistent tunnel (exit status 0)."
+                    : "OpenConnect exited with status \(status)."
                 self.emitter.send(SupervisorEvent(
                     type: "exit",
                     phase: .failed,
-                    message: "OpenConnect exited with status \(task.terminationStatus).",
-                    exitCode: task.terminationStatus
+                    message: message,
+                    exitCode: status
                 ))
-                exit(task.terminationStatus)
+                exit(status == 0 ? 1 : status)
             }
         }
         do {
